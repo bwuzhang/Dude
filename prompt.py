@@ -1,3 +1,6 @@
+# Private user context:
+# Add a file called private_user_context.py in the same directory as this file.
+# In that file, add a variable called USER_CONTEXT that is a string containing the user context.
 from private_user_context import USER_CONTEXT
 
 SCHEDULE_BOT_PREFIX = """

@@ -25,6 +25,7 @@ from langchain.agents.utils import validate_tools_single_input
 from langchain.base_language import BaseLanguageModel
 from langchain.callbacks.streaming_stdout import StreamingStdOutCallbackHandler
 from langchain.chat_models import ChatOpenAI
+from langchain.chat_models.base import BaseChatModel
 from langchain.memory import (
     ConversationBufferMemory,
     ConversationBufferWindowMemory,
@@ -68,14 +69,14 @@ chat4 = ChatOpenAI(
     streaming=True,
     callbacks=[StreamingStdOutCallbackHandler()],
     verbose=True,
-)
+)  # type: ignore
 chat35 = ChatOpenAI(
     temperature=0,
     model_name="gpt-3.5-turbo",
     streaming=False,
     callbacks=[StreamingStdOutCallbackHandler()],
     verbose=True,
-)
+)  # type: ignore
 
 
 class IDMapping:
@@ -111,7 +112,7 @@ class LLMFormatter:
     This class is used to format user input to a required format using LLM.
     """
 
-    llm = None
+    llm: BaseChatModel
     system_message_prompt = SystemMessagePromptTemplate.from_template(
         "You are a helpful assistant that format user inputs. You will be give a context, a user input, and a required outpout format. You output should follow exactly the output format. Preserve values in user input, only fill in vlues from context when missing from user input. The required format is: {format}. The context is: {context}. "
     )
@@ -246,7 +247,8 @@ class GoogleCalendar:
             return "Event with id %s added " % created_event["id"]
 
         except HttpError as error:
-            print("An error occurred: %s" % error)
+            warnings.warn("An error occurred: %s" % error)
+            return "An error occurred: %s" % error
 
     def insert_event(self, query: str) -> str:
         # Insert an event.
@@ -278,7 +280,8 @@ class GoogleCalendar:
             ) + " ".join([summary, start, end])
 
         except HttpError as error:
-            print("An error occurred: %s" % error)
+            warnings.warn("An error occurred: %s" % error)
+            return "An error occurred: %s" % error
 
     def delete_event(self, event_id: str) -> None:
         try:
@@ -342,7 +345,7 @@ class CustomPromptTemplate(BaseChatPromptTemplate):
     # The list of tools available
     tools: List[Tool]
 
-    def format_messages(self, **kwargs) -> str:
+    def format_messages(self, **kwargs) -> List[BaseMessage]:
         # Get the intermediate steps (AgentAction, Observation tuples)
         # Format them in a particular way
         intermediate_steps = kwargs.pop("intermediate_steps")
