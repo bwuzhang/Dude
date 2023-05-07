@@ -1,3 +1,4 @@
+import argparse
 import datetime
 import json
 import os
@@ -6,7 +7,9 @@ import re
 import warnings
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
+import colorama
 import pytz
+from colorama import Fore, Style
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -60,23 +63,25 @@ from prompt import (
     USER_CONTEXT,
 )
 
-os.environ["LANGCHAIN_HANDLER"] = "langchain"
+colorama.init(autoreset=True)
 
+VERBOSE_FLAG = False
 ## Load models
 chat4 = ChatOpenAI(
     temperature=0,
     model_name="gpt-4",
-    streaming=True,
+    streaming=VERBOSE_FLAG,
     callbacks=[StreamingStdOutCallbackHandler()],
-    verbose=True,
+    verbose=VERBOSE_FLAG,
 )  # type: ignore
 chat35 = ChatOpenAI(
     temperature=0,
     model_name="gpt-3.5-turbo",
-    streaming=False,
+    streaming=VERBOSE_FLAG,
     callbacks=[StreamingStdOutCallbackHandler()],
-    verbose=True,
+    verbose=VERBOSE_FLAG,
 )  # type: ignore
+CHAT_MODEL = chat35
 
 
 class IDMapping:
@@ -137,7 +142,7 @@ class LLMFormatter:
         return self.llm(messages).content
 
 
-llmFormatter = LLMFormatter(chat4)
+llmFormatter = LLMFormatter(CHAT_MODEL)
 # llmFormatter = LLMFormatter(chat35)
 
 
@@ -435,7 +440,7 @@ class ScheduleAgent(ZeroShotAgent):
         cls._validate_tools(tools)
         prompt = cls.create_prompt(tools=tools, output_parser=output_parser)
 
-        llm_chain = LLMChain(llm=llm, prompt=prompt, verbose=True)
+        llm_chain = LLMChain(llm=llm, prompt=prompt, verbose=VERBOSE_FLAG)
         tool_names = [tool.name for tool in tools]
         _output_parser = output_parser or cls._get_default_output_parser()
 
@@ -463,10 +468,10 @@ class CustomOutputParser(AgentOutputParser):
         return FORMAT_INSTRUCTIONS
 
     def parse(self, llm_output: str) -> Union[AgentAction, AgentFinish]:
-        print("=============")
-        print("Raw LLM Output:")
-        print(llm_output)
-        print("=============")
+        # print("=============")
+        # print("Raw LLM Output:")
+        # print(llm_output)
+        # print("=============")
         # Check if agent should finish
         if "Final Answer" in llm_output:
             return AgentFinish(
@@ -494,7 +499,32 @@ class CustomOutputParser(AgentOutputParser):
         )
 
 
+def parse_executor_output(output: str) -> str:
+    """
+    Parse the output of the executor.
+    """
+    pattern = r'"action_input":\s*"(.+?)"'
+
+    if "action" in output and "Final Answer" in output and "action_input" in output:
+        match = re.search(pattern, output)
+        if match:
+            action_input = match.group(1)
+            return action_input
+
+    return "WARNING Output not parsed\n" + output
+
+
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-v", "--verbose", help="increase output verbosity", action="store_true"
+    )
+    parser.add_argument("--chat4", help="using chat4", action="store_true")
+    args = parser.parse_args()
+    if args.verbose:
+        VERBOSE_FLAG = True
+    if args.chat4:
+        CHAT_MODEL = chat4
     calendar = GoogleCalendar()
 
     tools = [
@@ -524,21 +554,22 @@ if __name__ == "__main__":
         memory_key="chat_history", input_key="input", return_messages=True
     )
     scheduleAgent = ScheduleAgent.from_llm_and_tools(
-        tools=tools, llm=chat35, output_parser=CustomOutputParser()
+        tools=tools, llm=CHAT_MODEL, output_parser=CustomOutputParser()
     )
 
     agent_executor = AgentExecutor.from_agent_and_tools(
-        agent=scheduleAgent, tools=tools, verbose=True, memory=memory
+        agent=scheduleAgent, tools=tools, verbose=VERBOSE_FLAG, memory=memory
     )
     # print(scheduleAgent.llm_chain.prompt)
 
     # write a loop that takes in user input and generate system response with chatgpt
     while True:
         # user_input = "What's on my calendar?"
-        user_input = input("Enter your message: ")
-        agent_executor.run(
+        user_input = input(Fore.CYAN + "Enter your message: " + Style.RESET_ALL)
+        agent_output = agent_executor.run(
             input=user_input,
             system_calendar=calendar.system_calendar,
             user_context=USER_CONTEXT,
             current_time=datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
         )
+        print(Fore.MAGENTA + "Agent: ", parse_executor_output(agent_output))
