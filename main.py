@@ -153,11 +153,11 @@ class GoogleCalendar:
 
     system_calendar = ""
     today_events = ""
+    tomorrow_events = ""
     creds = None
 
     def __init__(self) -> None:
         self._auth_google_calendar()
-        self.today_events = self.get_today_events()
         self.system_calendar = self.construct_system_calendar()
 
     def _auth_google_calendar(self):
@@ -181,7 +181,7 @@ class GoogleCalendar:
             with open("token.json", "w") as token:
                 token.write(self.creds.to_json())
 
-    def get_today_events(self, query=""):
+    def get_today_events(self):
         # Get the current date and time
         now = datetime.datetime.now(pytz.timezone("US/Eastern"))
 
@@ -190,6 +190,26 @@ class GoogleCalendar:
             now.year, now.month, now.day, 23, 59, 59, tzinfo=now.tzinfo
         )
 
+        return self.get_day_events(now.isoformat(), end_of_today.isoformat())
+
+    def get_tomorrow_events(self):
+        # Get the current date and time
+        now = datetime.datetime.now(pytz.timezone("US/Eastern"))
+
+        # Get the last second of today
+        tomorrow = now + datetime.timedelta(days=1)
+        begin_of_tomorrow = datetime.datetime(
+            tomorrow.year, tomorrow.month, tomorrow.day, 0, 0, 0, tzinfo=now.tzinfo
+        )
+        end_of_tomorrow = datetime.datetime(
+            tomorrow.year, tomorrow.month, tomorrow.day, 23, 59, 59, tzinfo=now.tzinfo
+        )
+
+        return self.get_day_events(
+            begin_of_tomorrow.isoformat(), end_of_tomorrow.isoformat()
+        )
+
+    def get_day_events(self, timeMin, timeMax):
         try:
             service = build("calendar", "v3", credentials=self.creds)
             # Call the Calendar API
@@ -198,11 +218,11 @@ class GoogleCalendar:
                 service.events()
                 .list(
                     calendarId="primary",
-                    timeMin=now,
+                    timeMin=timeMin,
                     maxResults=10,
                     singleEvents=True,
                     orderBy="startTime",
-                    timeMax=end_of_today.isoformat(),
+                    timeMax=timeMax,
                 )
                 .execute()
             )
@@ -218,11 +238,16 @@ class GoogleCalendar:
 
         except HttpError as error:
             print("An error occurred: %s" % error)
+            warnings.warn("Google Calendar error occurred: %s" % error)
 
     def extract_cal_event(self, event):
         # Selected Keys in calendar events for LLM
-        calendar_keys_LLM = {"id", "summary", "start", "end"}
-        result = {k: event[k] for k in calendar_keys_LLM}
+        calendar_keys_LLM = ["id", "summary", "start", "end"]
+        result = {
+            k: event[k]
+            for k in sorted(calendar_keys_LLM, key=lambda x: calendar_keys_LLM.index(x))
+        }
+
         result["start"] = result["start"].get("date", result["start"].get("dateTime"))
         result["end"] = result["end"].get("date", result["end"].get("dateTime"))
 
@@ -230,15 +255,23 @@ class GoogleCalendar:
         if result["id"] not in idMaps.id2_to_id1:
             idMaps.add(result["id"])
         result["id"] = idMaps.get_id1(result["id"])
-        return result
+        return str(result)
 
     def construct_system_calendar(self, qeury=""):
-        today_events_str = ""
+        self.today_events = self.get_today_events()
+        self.tomorrow_events = self.get_tomorrow_events()
 
+        result = "Today Calendar:\n"
         if not self.today_events:
-            return "No event"
+            result += "No event\n"
         else:
-            return ",".join([str(event) for event in self.today_events])
+            result += ",".join([str(event) for event in self.today_events]) + "\n"
+        result += "Tomorrow Calendar:\n"
+        if not self.tomorrow_events:
+            result += "No event\n"
+        else:
+            result += ",".join([str(event) for event in self.tomorrow_events])
+        return result
 
     def quickAdd(self, query: str) -> str:
         try:
@@ -339,7 +372,6 @@ class GoogleCalendar:
             print("An error occurred: %s" % error)
 
     def update_system_calendar(self) -> None:
-        self.today_events = self.get_today_events()
         self.system_calendar = self.construct_system_calendar()
 
 
@@ -572,4 +604,4 @@ if __name__ == "__main__":
             user_context=USER_CONTEXT,
             current_time=datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
         )
-        print(Fore.MAGENTA + "Agent: ", parse_executor_output(agent_output))
+        print(Fore.MAGENTA + "Dude:", parse_executor_output(agent_output))

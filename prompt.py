@@ -19,7 +19,6 @@ You will help user in the folling steps:
 User Context:
 {user_context}
 
-System Calendar:
 {system_calendar}
 
 Current Time:
